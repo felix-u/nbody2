@@ -1,0 +1,6 @@
+nbody2
+release/
+*.o
+*.out
+zig-cache/
+zig-out/
