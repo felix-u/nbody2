@@ -8,5 +8,6 @@ with pkgs; mkShell {
   nativeBuildInputs = [
   ];
   buildInputs = [
+    wayland
   ];
 }
