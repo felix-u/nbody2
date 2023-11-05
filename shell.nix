@@ -9,5 +9,6 @@ with pkgs; mkShell {
   ];
   buildInputs = [
     wayland
+    libxkbcommon
   ];
 }

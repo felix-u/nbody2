@@ -11,6 +11,7 @@
 #include <wayland-client.h>
 #include "xdg-shell-client-protocol.h"
 #include "xdg-shell-protocol.c"
+#include <xkbcommon/xkbcommon.h>
 
 #define BASE_IMPLEMENTATION
 #include "base.h"
@@ -57,28 +58,48 @@ int allocate_shm_file(size_t size) {
 
 typedef struct wl_buffer Wl_Buffer;
 typedef struct wl_buffer_listener Wl_Buffer_Listener;
+typedef struct wl_callback Wl_Callback;
+typedef struct wl_callback_listener Wl_Callback_Listener;
 typedef struct wl_compositor Wl_Compositor;
 typedef struct wl_display Wl_Display;
+typedef struct wl_keyboard Wl_Keyboard;
+typedef struct wl_pointer Wl_Pointer;
 typedef struct wl_registry Wl_Registry;
 typedef struct wl_registry_listener Wl_Registry_Listener;
+typedef struct wl_seat Wl_Seat;
+typedef struct wl_seat_listener Wl_Seat_Listener;
 typedef struct wl_shm Wl_Shared_Mem;
 typedef struct wl_shm_pool Wl_Shared_Mem_Pool;
 typedef struct wl_surface Wl_Surface;
+typedef struct wl_touch Wl_Touch;
+
 typedef struct xdg_surface XDG_Surface;
 typedef struct xdg_surface_listener XDG_Surface_Listener;
 typedef struct xdg_toplevel XDG_Toplevel;
 typedef struct xdg_wm_base XDG_WM_Base;
 typedef struct xdg_wm_base_listener XDG_WM_Base_Listener;
 
+typedef struct xkb_context XKB_Context;
+typedef struct xkb_keymap XKB_Keymap;
+typedef struct xkb_state XKB_State;
+
 typedef struct Client_State {
-    Wl_Display *wl_display;
-    Wl_Registry *wl_registry;
-    Wl_Shared_Mem *wl_shm;
     Wl_Compositor *wl_compositor;
-    XDG_WM_Base *xdg_wm_base;
+    Wl_Display *wl_display;
+    Wl_Keyboard *wl_keyboard;
+    Wl_Pointer *wl_pointer;
+    Wl_Registry *wl_registry;
+    Wl_Seat *wl_seat;
+    Wl_Shared_Mem *wl_shm;
     Wl_Surface *wl_surface;
+    Wl_Touch *wl_touch;
     XDG_Surface *xdg_surface;
     XDG_Toplevel *xdg_toplevel;
+    XDG_WM_Base *xdg_wm_base;
+    f64 offset;
+    u32 last_frame;
+    usize height;
+    usize width;
 } Client_State;
 
 void wl_buffer_release(void *data, Wl_Buffer *wl_buffer) {
@@ -116,10 +137,14 @@ Wl_Buffer *draw_frame(Client_State *state) {
     wl_shm_pool_destroy(pool);
     close(fd);
 
+    usize offset = (int)(state->offset) % 8;
     for (usize y = 0; y < height; ++y) {
         for (usize x = 0; x < width; ++x) {
-            if ((x + y / 8 * 8) % 16 < 8) data[y * width + x] = 0xFF666666;
-            else data[y * width + x] = 0xFFEEEEEE;
+            if ((x + y / 8 * 8) % 16 < 8 &&
+                ((x + offset) + (y + offset) / 8 * 8) % 16 < 8
+            ) {
+                data[y * width + x] = 0xFF666666;
+            } else data[y * width + x] = 0xFFEEEEEE;
         }
     }
 
@@ -150,6 +175,51 @@ const XDG_WM_Base_Listener xdg_wm_base_listener = {
     .ping = xdg_wm_base_ping,
 };
 
+const Wl_Callback_Listener wl_surface_frame_listener;
+
+void wl_surface_frame_done(void *data, Wl_Callback *callback, u32 time) {
+    wl_callback_destroy(callback);
+
+    Client_State *state = data;
+    callback = wl_surface_frame(state->wl_surface);
+    wl_callback_add_listener(callback, &wl_surface_frame_listener, state);
+
+    if (state->last_frame != 0) {
+        usize elapsed = time - state->last_frame;
+        state->offset += elapsed / 1000.0 * 24;
+    }
+
+    Wl_Buffer *buffer = draw_frame(state);
+    wl_surface_attach(state->wl_surface, buffer, 0, 0);
+    wl_surface_damage_buffer(state->wl_surface, 0, 0, INT32_MAX, INT32_MAX);
+    wl_surface_commit(state->wl_surface);
+
+    state->last_frame = time;
+}
+
+const Wl_Callback_Listener wl_surface_frame_listener = {
+    .done = wl_surface_frame_done,
+};
+
+void wl_seat_capabilities(void *data, Wl_Seat *wl_seat, u32 capabilities) {
+    (void)wl_seat;
+    (void)capabilities;
+    Client_State *state = data;
+    (void)state;
+    // TODO
+}
+
+void wl_seat_name(void *data, Wl_Seat *wl_seat, const char *name) {
+    (void)data;
+    (void)wl_seat;
+    fprintf(stderr, "seat name: %s\n", name);
+}
+
+const Wl_Seat_Listener wl_seat_listener = {
+    .capabilities = wl_seat_capabilities,
+    .name = wl_seat_name,
+};
+
 void registry_global(
     void *data, 
     Wl_Registry *wl_registry,
@@ -173,6 +243,14 @@ void registry_global(
             &xdg_wm_base_listener, 
             state
         );
+    } else if (strcmp(interface, wl_seat_interface.name) == 0) {
+        state->wl_seat = wl_registry_bind(
+            wl_registry, 
+            name, 
+            &wl_seat_interface, 
+            7
+        );
+        wl_seat_add_listener(state->wl_seat, &wl_seat_listener, state);
     }
 }
 
@@ -201,6 +279,9 @@ int main(void) {
     state.xdg_toplevel = xdg_surface_get_toplevel(state.xdg_surface);
     xdg_toplevel_set_title(state.xdg_toplevel, "Example client");
     wl_surface_commit(state.wl_surface);
+
+    Wl_Callback *callback = wl_surface_frame(state.wl_surface);
+    wl_callback_add_listener(callback, &wl_surface_frame_listener, &state);
 
     while (wl_display_dispatch(state.wl_display)) {
         // TODO
