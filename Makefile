@@ -1,12 +1,12 @@
 NAME=nbody2
 VERSION=0.1-dev
 
-CFLAGS=-std=c99 \
+CFLAGS=\
 	-Wall -Wextra -pedantic -Werror -Wshadow \
 	-fno-strict-aliasing -Wstrict-overflow
 DEBUGFLAGS=-g3 -ggdb -fsanitize=address,undefined
 RELEASEFLAGS=-O3 -s
-LIBS=
+LIBS=-lwayland-client -lrt
 
 CROSSCC=zig cc -DUNITY_BUILD
 
