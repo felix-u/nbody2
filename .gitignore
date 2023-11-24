@@ -1,6 +1,7 @@
-nbody2
+*.exe
 release/
 *.o
 *.out
+*.pdb
 zig-cache/
 zig-out/

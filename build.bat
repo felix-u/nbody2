@@ -5,7 +5,7 @@ set cc-command=zig cc ^
     -Wall -Wextra -pedantic -Werror -Wshadow ^
 	-fno-strict-aliasing -Wstrict-overflow
 
-set debug-flags=-g3 -gcodeview -fsanitize=address,undefined -lasan
+set debug-flags=-gcodeview -fsanitize=undefined
 
 set release-flags=-O3 -s
 
