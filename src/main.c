@@ -3,6 +3,8 @@
 
 #include <windows.h>
 
+static bool running;
+
 LRESULT main_window_callback(
     HWND window_handle,
     UINT message,
@@ -20,10 +22,26 @@ LRESULT main_window_callback(
             OutputDebugStringA("WM_ACTIVATEAPP\n");
         } break;
         case WM_CLOSE: {
+            // TODO: message to user
+            running = false;
             OutputDebugStringA("WM_CLOSE\n");
         } break;
         case WM_DESTROY: {
+            // TODO: error
+            running = false;
             OutputDebugStringA("WM_DESTROY\n");
+        } break;
+        case WM_PAINT: {
+            PAINTSTRUCT paint;
+            HDC device_ctx = BeginPaint(window_handle, &paint);
+
+            int x = paint.rcPaint.left;
+            int y = paint.rcPaint.top;
+            int width = paint.rcPaint.right - paint.rcPaint.left;
+            int height = paint.rcPaint.bottom - paint.rcPaint.top;
+            PatBlt(device_ctx, x, y, width, height, BLACKNESS);
+
+            EndPaint(window_handle, &paint);
         } break;
         case WM_SIZE: {
             OutputDebugStringA("WM_SIZE\n");
