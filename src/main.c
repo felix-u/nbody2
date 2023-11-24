@@ -3,17 +3,85 @@
 
 #include <windows.h>
 
-int CALLBACK WinMain(
-    HINSTANCE hInstance,
-    HINSTANCE hPrevInstance,
-    LPSTR lpCmdLine,
-    int nCmdShow
+LRESULT main_window_callback(
+    HWND window_handle,
+    UINT message,
+    WPARAM w_param,
+    LPARAM l_param
 ) {
-    (void)hInstance;
-    (void)hPrevInstance;
-    (void)lpCmdLine;
-    (void)nCmdShow;
+    (void)window_handle;
+    (void)w_param;
+    (void)l_param;
 
-    MessageBox(0, "This is nbody2", "nbody2", MB_OK | MB_ICONINFORMATION);
+    LRESULT result = 0;
+
+    switch (message) {
+        case WM_ACTIVATEAPP: {
+            OutputDebugStringA("WM_ACTIVATEAPP\n");
+        } break;
+        case WM_CLOSE: {
+            OutputDebugStringA("WM_CLOSE\n");
+        } break;
+        case WM_DESTROY: {
+            OutputDebugStringA("WM_DESTROY\n");
+        } break;
+        case WM_SIZE: {
+            OutputDebugStringA("WM_SIZE\n");
+        } break;
+        default: {
+            result = DefWindowProc(window_handle, message, w_param, l_param);
+            // OutputDebugStringA("default\n");
+        } break;
+    }
+
+    return result;
+}
+
+int CALLBACK WinMain(
+    HINSTANCE instance,
+    HINSTANCE prev_instance,
+    LPSTR command_line,
+    int show_code
+) {
+    (void)prev_instance;
+    (void)command_line;
+    (void)show_code;
+
+    WNDCLASSA window_class = {
+        .style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
+        .lpfnWndProc = main_window_callback,
+        .hInstance = instance,
+        .lpszClassName = "nbody2_window_class",
+    };
+
+    if (!RegisterClass(&window_class)) {
+        // TODO: handle error
+    }
+
+    HWND window_handle = CreateWindowEx(
+        0,
+        window_class.lpszClassName,
+        "nbody2",
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        CW_USEDEFAULT,
+        0,
+        0,
+        instance,
+        0
+    );
+
+    if (!window_handle) {
+        // TODO: handle error
+    }
+
+    MSG message;
+    while (GetMessage(&message, 0, 0, 0) > 0) {
+        TranslateMessage(&message);
+        DispatchMessage(&message);
+    }
+
     return 0;
 }
