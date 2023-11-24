@@ -1,4 +1,4 @@
-*.exe
+nbody2*
 release/
 *.o
 *.out
