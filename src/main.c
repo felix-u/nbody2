@@ -7,44 +7,68 @@ static bool running;
 
 static BITMAPINFO bitmap_info;
 static void *bitmap_mem;
-static HBITMAP bitmap_handle;
-static HDC bitmap_device_ctx;
+static int bitmap_width;
+static int bitmap_height;
+static const int bytes_per_pixel = 4;
 
-static void resize_DIB_section(int width, int height) {
-    if (bitmap_handle) DeleteObject(bitmap_handle);
-    if (!bitmap_device_ctx) bitmap_device_ctx = CreateCompatibleDC(0);
+static void render_gradient(const int x_offset, const int y_offset) {
+    const int bitmap_mem_size = bytes_per_pixel * bitmap_width * bitmap_height;
+    bitmap_mem = VirtualAlloc(0, bitmap_mem_size, MEM_COMMIT, PAGE_READWRITE);
+
+    const int stride = bitmap_width * bytes_per_pixel;
+    u8 *row = bitmap_mem;
+    for (int y = 0; y < bitmap_height; y += 1, row += stride) {
+        u32 *pixel = (u32 *)row;
+        for (int x = 0; x < bitmap_width; x += 1) {
+            const u32 r = (u8)(x + x_offset);
+            const u32 g = (u8)(y + y_offset);
+            const u32 b = (u8)(x_offset);
+            const u32 pad = 0x00;
+
+            *(pixel++) = (pad << 24) | (r << 16) | (g << 8) | b;
+        }
+    }
+}
+
+static void resize_DIB_section(const int width, const int height) {
+    if (bitmap_mem) VirtualFree(bitmap_mem, 0, MEM_RELEASE);
+
+    bitmap_width = width;
+    bitmap_height = height;
 
     bitmap_info = (BITMAPINFO){
         .bmiHeader = { 
             .biSize = sizeof(bitmap_info.bmiHeader),
-            .biWidth = width,
-            .biHeight = height,
+            .biWidth = bitmap_width,
+            .biHeight = -bitmap_height,
             .biPlanes = 1,
             .biBitCount = 32,
             .biCompression = BI_RGB,
         },
     };
-
-    bitmap_handle = CreateDIBSection(
-        bitmap_device_ctx,
-        &bitmap_info,
-        DIB_RGB_COLORS,
-        &bitmap_mem,
-        0, 0 
-    );
 }
 
 static void update_window(
     HDC device_ctx, 
-    int x, 
-    int y, 
-    int width, 
-    int height
+    RECT *client_rect,
+    const int x, 
+    const int y, 
+    const int width, 
+    const int height
 ) {
+    (void)x;
+    (void)y;
+    (void)width;
+    (void)height;
+
+    const int window_width = client_rect->right - client_rect->left;
+    const int window_height = client_rect->bottom - client_rect->top;
     StretchDIBits(
         device_ctx,
-        x, y, width, height,
-        x, y, width, height,
+        // x, y, width, height,
+        // x, y, width, height,
+        0, 0, bitmap_width, bitmap_height,
+        0, 0, window_width, window_height,
         bitmap_mem,
         &bitmap_info,
         DIB_RGB_COLORS, 
@@ -82,20 +106,26 @@ LRESULT main_window_callback(
             PAINTSTRUCT paint;
             HDC device_ctx = BeginPaint(window_handle, &paint);
 
-            int x = paint.rcPaint.left;
-            int y = paint.rcPaint.top;
-            int width = paint.rcPaint.right - paint.rcPaint.left;
-            int height = paint.rcPaint.bottom - paint.rcPaint.top;
-            update_window(device_ctx, x, y, width, height);
+            const int x = paint.rcPaint.left;
+            const int y = paint.rcPaint.top;
+            const int width = paint.rcPaint.right - paint.rcPaint.left;
+            const int height = paint.rcPaint.bottom - paint.rcPaint.top;
+
+            RECT client_rect;
+            GetClientRect(window_handle, &client_rect);
+
+            update_window(device_ctx, &client_rect, x, y, width, height);
 
             EndPaint(window_handle, &paint);
         } break;
         case WM_SIZE: {
             RECT client_rect;
             GetClientRect(window_handle, &client_rect);
+
             int width = client_rect.right - client_rect.left;
             int height = client_rect.bottom - client_rect.top;
             resize_DIB_section(width, height);
+
             OutputDebugStringA("WM_SIZE\n");
         } break;
         default: {
@@ -147,12 +177,30 @@ int CALLBACK WinMain(
         // TODO: handle error
     }
 
+    int x_offset = 0;
+    int y_offset = 0;
+
     running = true;
     while (running) {
         MSG message;
-        if (GetMessage(&message, 0, 0, 0) <= 0) break;
-        TranslateMessage(&message);
-        DispatchMessage(&message);
+        while (PeekMessage(&message, 0, 0, 0, PM_REMOVE)) {
+            if (message.message == WM_QUIT) running = false;
+            TranslateMessage(&message);
+            DispatchMessageA(&message);
+        }
+
+        render_gradient(x_offset, y_offset);
+
+        HDC device_ctx = GetDC(window_handle);
+        RECT client_rect;
+        GetClientRect(window_handle, &client_rect);
+        const int window_width = client_rect.right - client_rect.left;
+        const int window_height = client_rect.bottom - client_rect.top;
+        update_window(device_ctx, &client_rect, 0, 0, window_width, window_height);
+        ReleaseDC(window_handle, device_ctx);
+
+        x_offset += 1;
+        y_offset += 1;
     }
 
     return 0;
