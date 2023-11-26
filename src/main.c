@@ -148,7 +148,7 @@ int CALLBACK WinMain(
     (void)show_code;
 
     WNDCLASSA window_class = {
-        .style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
+        .style = CS_HREDRAW | CS_VREDRAW,
         .lpfnWndProc = main_window_callback,
         .hInstance = instance,
         .lpszClassName = "nbody2_window_class",
