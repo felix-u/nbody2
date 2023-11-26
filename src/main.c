@@ -2,6 +2,7 @@
 #include "base.h"
 
 #include <windows.h>
+#include <xinput.h>
 
 static bool running;
 
@@ -31,14 +32,14 @@ static Window_Dimension get_window_dimension(const HWND window_handle) {
 }
 
 static void render_gradient(
-    const Screen_Buffer buffer, 
+    Screen_Buffer *const buffer, 
     const int x_offset, 
     const int y_offset
 ) {
-    u8 *row = buffer.mem;
-    for (int y = 0; y < buffer.height; y += 1, row += buffer.stride) {
+    u8 *row = buffer->mem;
+    for (int y = 0; y < buffer->height; y += 1, row += buffer->stride) {
         u32 *pixel = (u32 *)row;
-        for (int x = 0; x < buffer.width; x += 1) {
+        for (int x = 0; x < buffer->width; x += 1) {
             const u32 r = (u8)(x + x_offset);
             const u32 g = (u8)(y + y_offset);
             const u32 b = (u8)(x_offset);
@@ -81,7 +82,7 @@ static void blit_buffer(
     const HDC device_ctx, 
     const int window_width,
     const int window_height,
-    const Screen_Buffer buffer,
+    Screen_Buffer *const buffer,
     const int x, 
     const int y, 
     const int width, 
@@ -97,9 +98,9 @@ static void blit_buffer(
         // x, y, width, height,
         // x, y, width, height,
         0, 0, window_width, window_height,
-        0, 0, buffer.width, buffer.height,
-        buffer.mem,
-        &buffer.info,
+        0, 0, buffer->width, buffer->height,
+        buffer->mem,
+        &buffer->info,
         DIB_RGB_COLORS, 
         SRCCOPY
     );
@@ -111,10 +112,6 @@ LRESULT main_window_callback(
     WPARAM w_param,
     LPARAM l_param
 ) {
-    (void)window_handle;
-    (void)w_param;
-    (void)l_param;
-
     LRESULT result = 0;
 
     switch (message) {
@@ -131,6 +128,31 @@ LRESULT main_window_callback(
             running = false;
             OutputDebugStringA("WM_DESTROY\n");
         } break;
+        case WM_SYSKEYDOWN:
+        case WM_SYSKEYUP:
+        case WM_KEYDOWN:
+        case WM_KEYUP: {
+            const u32  vkcode   = w_param;
+            const bool was_down = ((l_param & ((u32)1 << 30)) != 0);
+            const bool is_down  = ((l_param & ((u32)1 << 31)) == 0);
+
+            if (is_down && was_down) break;
+
+            if (vkcode == 'W') {
+                OutputDebugStringA("W ");
+                if (is_down) OutputDebugStringA("is_down ");
+                if (was_down) OutputDebugStringA("was_down ");
+                OutputDebugStringA("\n");
+            } else if (vkcode == 'A') {
+            } else if (vkcode == 'S') {
+            } else if (vkcode == 'D') {
+            } else if (vkcode == 'Q') {
+            } else if (vkcode == 'E') {
+            } else if (vkcode == VK_ESCAPE) {
+                running = false;
+            } else if (vkcode == VK_SPACE) {
+            }
+        } break;
         case WM_PAINT: {
             PAINTSTRUCT paint;
             HDC device_ctx = BeginPaint(window_handle, &paint);
@@ -146,7 +168,7 @@ LRESULT main_window_callback(
                 device_ctx, 
                 dim.width,
                 dim.height,
-                screen_buffer, 
+                &screen_buffer, 
                 x, y, width, height
             );
 
@@ -178,7 +200,7 @@ int CALLBACK WinMain(
 
     resize_DIB_section(&screen_buffer, 640, 360);
 
-    WNDCLASSA window_class = {
+    const WNDCLASSA window_class = {
         .style = CS_HREDRAW | CS_VREDRAW,
         .lpfnWndProc = main_window_callback,
         .hInstance = instance,
@@ -189,7 +211,7 @@ int CALLBACK WinMain(
         // TODO: handle error
     }
 
-    HWND window_handle = CreateWindowEx(
+    const HWND window_handle = CreateWindowEx(
         0,
         window_class.lpszClassName,
         "nbody2",
@@ -220,7 +242,57 @@ int CALLBACK WinMain(
             DispatchMessageA(&message);
         }
 
-        render_gradient(screen_buffer, x_offset, y_offset);
+        for (
+            DWORD controller_i = 0; 
+            controller_i < XUSER_MAX_COUNT; 
+            controller_i += 1
+        ) {
+            XINPUT_STATE controller_state;
+            if (
+                XInputGetState(controller_i, &controller_state) 
+                    == ERROR_SUCCESS
+            ) {
+                const XINPUT_GAMEPAD *pad = &controller_state.Gamepad;
+
+                // const bool d_left  = pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT;
+                // const bool d_down  = pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN;
+                // const bool d_up    = pad->wButtons & XINPUT_GAMEPAD_DPAD_UP;
+                // const bool d_right = pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT;
+
+                // const bool start = pad->wButtons & XINPUT_GAMEPAD_START;
+                // const bool back  = pad->wButtons & XINPUT_GAMEPAD_BACK;
+
+                // const bool left_shoulder = 
+                //     pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER;
+                // const bool right_shoulder 
+                //     = pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER;
+
+                const bool a = pad->wButtons & XINPUT_GAMEPAD_A;
+                const bool b = pad->wButtons & XINPUT_GAMEPAD_B;
+                const bool x = pad->wButtons & XINPUT_GAMEPAD_X;
+                const bool y = pad->wButtons & XINPUT_GAMEPAD_Y;
+
+                // const i16 lstick_x = pad->sThumbLX;
+                // const i16 lstick_y = pad->sThumbLY;
+                
+                if (a) y_offset += 2;
+                if (b) x_offset += 2;
+                if (x) x_offset -= 2;
+                if (y) y_offset -= 2;
+
+                if (x_offset || y_offset) {
+                    XINPUT_VIBRATION vibration = {
+                        .wLeftMotorSpeed = 20000,
+                        .wRightMotorSpeed = 20000,
+                    };
+                    XInputSetState(0, &vibration);
+                }
+            } else {
+                // Controller unavailable
+            }
+        }
+
+        render_gradient(&screen_buffer, x_offset, y_offset);
 
         HDC device_ctx = GetDC(window_handle);
         const Window_Dimension dim = get_window_dimension(window_handle);
@@ -228,13 +300,10 @@ int CALLBACK WinMain(
             device_ctx, 
             dim.width, 
             dim.height,
-            screen_buffer, 
+            &screen_buffer, 
             0, 0, dim.width, dim.height
         );
         ReleaseDC(window_handle, device_ctx);
-
-        x_offset += 1;
-        y_offset += 1;
     }
 
     return 0;

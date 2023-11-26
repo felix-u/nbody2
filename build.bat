@@ -4,7 +4,7 @@ set cc-command=zig cc ^
     -std=c99 ^
     -Wall -Wextra -pedantic -Werror -Wshadow ^
 	-fno-strict-aliasing -Wstrict-overflow ^
-    -lgdi32
+    -lgdi32 -lXinput1_4
 
 set debug-flags=-gcodeview -fsanitize=undefined
 
