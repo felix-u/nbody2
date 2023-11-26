@@ -18,6 +18,8 @@ typedef struct Screen_Buffer {
 
 static Screen_Buffer screen_buffer = { .bytes_per_pixel = 4 };
 
+static LPDIRECTSOUNDBUFFER secondary_buffer;
+
 static void init_dsound(
     const HWND window_handle, 
     const usize samples_per_second,
@@ -52,7 +54,9 @@ static void init_dsound(
         return;
     }
 
-    const WAVEFORMATEX wave_format = {
+    const IDirectSoundBufferVtbl *pbuffer_vt = primary_buffer->lpVtbl;
+
+    WAVEFORMATEX wave_format = {
         .wFormatTag = WAVE_FORMAT_PCM,
         .nChannels = 2,
         .nSamplesPerSec = samples_per_second,
@@ -62,12 +66,23 @@ static void init_dsound(
         .wBitsPerSample = 16,
     };
 
-    if (!SUCCEEDED(primary_buffer->SetFormat(&wave_format))) {
+    if (!SUCCEEDED(pbuffer_vt->SetFormat(primary_buffer, &wave_format))) {
         // TODO: handle error
         return;
     }
 
-    // TODO: not done
+    const DSBUFFERDESC buffer_desc2 = {
+        .dwSize = sizeof(buffer_desc2),
+        .dwBufferBytes = buffer_size,
+        .lpwfxFormat = &wave_format,
+    };
+
+    if (!SUCCEEDED(dsound_vt->CreateSoundBuffer(
+        dsound, &buffer_desc2, &secondary_buffer, 0))
+    ) {
+        // TODO: handle error
+        return;
+    }
 }
 
 typedef struct Window_Dimension {
@@ -290,7 +305,20 @@ int CALLBACK WinMain(
         // TODO: handle error
     }
 
-    init_dsound(window_handle);
+    const usize hz = 256;
+
+    const usize bytes_per_sample = sizeof(i16) * 2;
+    const usize samples_per_second = 48000;
+    const usize secondary_buffer_size = samples_per_second * bytes_per_sample;
+
+    const usize square_wave_period = samples_per_second / hz;
+    const usize half_square_wave_period = square_wave_period / 2;
+
+    usize running_sample_i = 0;
+
+    init_dsound(window_handle, samples_per_second, secondary_buffer_size);
+    const IDirectSoundBufferVtbl *sbuffer_vt = secondary_buffer->lpVtbl;
+    sbuffer_vt->Play(secondary_buffer, 0, 0, DSBPLAY_LOOPING);
 
     int x_offset = 0;
     int y_offset = 0;
@@ -352,6 +380,70 @@ int CALLBACK WinMain(
             } else {
                 // Controller unavailable
             }
+        }
+
+        DWORD play_cursor;
+        DWORD write_cursor;
+
+        if (!SUCCEEDED(sbuffer_vt->GetCurrentPosition(
+            secondary_buffer, 
+            &play_cursor, 
+            &write_cursor))
+        ) {
+            // TODO: handle error
+            return 1;
+        }
+
+        void *region1 = NULL;
+        DWORD region1_size;
+        void *region2 = NULL;
+        DWORD region2_size;
+
+        const DWORD byte_to_lock = 
+            (running_sample_i * bytes_per_sample) % secondary_buffer_size;
+        const DWORD bytes_to_write = byte_to_lock > play_cursor
+            ? secondary_buffer_size - byte_to_lock + play_cursor
+            : play_cursor - byte_to_lock;
+
+        if (!SUCCEEDED(sbuffer_vt->Lock(
+            secondary_buffer,
+            byte_to_lock,
+            bytes_to_write,
+            region1,
+            &region1_size,
+            region2,
+            &region2_size,
+            0))
+        ) {
+            // TODO: handle error
+            return 1;
+        }
+
+        // const DWORD region1_sample_count = region1_size / bytes_per_sample;
+        // const DWORD region2_sample_count = region2_size / bytes_per_sample;
+        
+        const i16 tone_volume = 5000;
+
+        i16 *sample_out = region1;
+        for (DWORD sample_i = 0; sample_i < region1_size; sample_i += 1) {
+            const i16 sample_value = 
+                (running_sample_i / half_square_wave_period) % 2
+                    ? tone_volume
+                    : -tone_volume;
+            *(sample_out++) = sample_value;
+            *(sample_out++) = sample_value;
+            running_sample_i += 1;
+        }
+
+        sample_out = region2;
+        for (DWORD sample_i = 0; sample_i < region2_size; sample_i += 1) {
+            const i16 sample_value = 
+                (running_sample_i / half_square_wave_period) % 2
+                    ? tone_volume
+                    : -tone_volume;
+            *(sample_out++) = sample_value;
+            *(sample_out++) = sample_value;
+            running_sample_i += 1;
         }
 
         render_gradient(&screen_buffer, x_offset, y_offset);
