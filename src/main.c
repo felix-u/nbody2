@@ -1,6 +1,7 @@
 #define BASE_IMPLEMENTATION
 #include "base.h"
 
+#include <dsound.h>
 #include <windows.h>
 #include <xinput.h>
 
@@ -16,6 +17,58 @@ typedef struct Screen_Buffer {
 } Screen_Buffer;
 
 static Screen_Buffer screen_buffer = { .bytes_per_pixel = 4 };
+
+static void init_dsound(
+    const HWND window_handle, 
+    const usize samples_per_second,
+    const usize buffer_size
+) {
+    LPDIRECTSOUND dsound;
+    if (!SUCCEEDED(DirectSoundCreate(0, &dsound, 0))) {
+        // TODO: handle error
+        return;
+    }
+
+    const IDirectSoundVtbl *dsound_vt = dsound->lpVtbl;
+
+    if (!SUCCEEDED(
+        dsound_vt->SetCooperativeLevel(dsound, window_handle, DSSCL_PRIORITY))
+    ) {
+        // TODO: handle error
+        return;
+    }
+
+    const DSBUFFERDESC buffer_desc = {
+        .dwSize = sizeof(buffer_desc),
+        .dwFlags = DSBCAPS_PRIMARYBUFFER,
+        .dwBufferBytes = buffer_size,
+    };
+
+    LPDIRECTSOUNDBUFFER primary_buffer;
+    if (!SUCCEEDED(
+        dsound_vt->CreateSoundBuffer(dsound, &buffer_desc, &primary_buffer, 0))
+    ) {
+        // TODO: handle error
+        return;
+    }
+
+    const WAVEFORMATEX wave_format = {
+        .wFormatTag = WAVE_FORMAT_PCM,
+        .nChannels = 2,
+        .nSamplesPerSec = samples_per_second,
+        .nAvgBytesPerSec = 
+            wave_format.nSamplesPerSec * wave_format.nBlockAlign,
+        .nBlockAlign = wave_format.nChannels * wave_format.wBitsPerSample / 8,
+        .wBitsPerSample = 16,
+    };
+
+    if (!SUCCEEDED(primary_buffer->SetFormat(&wave_format))) {
+        // TODO: handle error
+        return;
+    }
+
+    // TODO: not done
+}
 
 typedef struct Window_Dimension {
     int width;
@@ -138,6 +191,12 @@ LRESULT main_window_callback(
 
             if (is_down && was_down) break;
 
+            const bool alt_key_down = (l_param & ((u32)1 << 29)) != 0;
+            if (alt_key_down && vkcode == VK_F4) {
+                running = false;
+                break;
+            }
+
             if (vkcode == 'W') {
                 OutputDebugStringA("W ");
                 if (is_down) OutputDebugStringA("is_down ");
@@ -150,6 +209,7 @@ LRESULT main_window_callback(
             } else if (vkcode == 'E') {
             } else if (vkcode == VK_ESCAPE) {
                 running = false;
+                break;
             } else if (vkcode == VK_SPACE) {
             }
         } break;
@@ -229,6 +289,8 @@ int CALLBACK WinMain(
     if (!window_handle) {
         // TODO: handle error
     }
+
+    init_dsound(window_handle);
 
     int x_offset = 0;
     int y_offset = 0;
