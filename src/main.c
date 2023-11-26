@@ -5,21 +5,40 @@
 
 static bool running;
 
-static BITMAPINFO bitmap_info;
-static void *bitmap_mem;
-static int bitmap_width;
-static int bitmap_height;
-static const int bytes_per_pixel = 4;
+typedef struct Screen_Buffer {
+    BITMAPINFO info;
+    void *mem;
+    int width;
+    int height;
+    int stride;
+    int bytes_per_pixel;
+} Screen_Buffer;
 
-static void render_gradient(const int x_offset, const int y_offset) {
-    const int bitmap_mem_size = bytes_per_pixel * bitmap_width * bitmap_height;
-    bitmap_mem = VirtualAlloc(0, bitmap_mem_size, MEM_COMMIT, PAGE_READWRITE);
+static Screen_Buffer screen_buffer = { .bytes_per_pixel = 4 };
 
-    const int stride = bitmap_width * bytes_per_pixel;
-    u8 *row = bitmap_mem;
-    for (int y = 0; y < bitmap_height; y += 1, row += stride) {
+typedef struct Window_Dimension {
+    int width;
+    int height;
+} Window_Dimension;
+
+static Window_Dimension get_window_dimension(const HWND window_handle) {
+    RECT client_rect;
+    GetClientRect(window_handle, &client_rect);
+    return (Window_Dimension){
+        .width = client_rect.right - client_rect.left,
+        .height = client_rect.bottom - client_rect.top,
+    };
+}
+
+static void render_gradient(
+    const Screen_Buffer buffer, 
+    const int x_offset, 
+    const int y_offset
+) {
+    u8 *row = buffer.mem;
+    for (int y = 0; y < buffer.height; y += 1, row += buffer.stride) {
         u32 *pixel = (u32 *)row;
-        for (int x = 0; x < bitmap_width; x += 1) {
+        for (int x = 0; x < buffer.width; x += 1) {
             const u32 r = (u8)(x + x_offset);
             const u32 g = (u8)(y + y_offset);
             const u32 b = (u8)(x_offset);
@@ -30,27 +49,39 @@ static void render_gradient(const int x_offset, const int y_offset) {
     }
 }
 
-static void resize_DIB_section(const int width, const int height) {
-    if (bitmap_mem) VirtualFree(bitmap_mem, 0, MEM_RELEASE);
+static void resize_DIB_section(
+    Screen_Buffer *const buffer, 
+    const int width, 
+    const int height
+) {
+    if (buffer->mem) VirtualFree(buffer->mem, 0, MEM_RELEASE);
 
-    bitmap_width = width;
-    bitmap_height = height;
+    buffer->width = width;
+    buffer->height = height;
 
-    bitmap_info = (BITMAPINFO){
+    buffer->info = (BITMAPINFO){
         .bmiHeader = { 
-            .biSize = sizeof(bitmap_info.bmiHeader),
-            .biWidth = bitmap_width,
-            .biHeight = -bitmap_height,
+            .biSize = sizeof(buffer->info.bmiHeader),
+            .biWidth = buffer->width,
+            .biHeight = -buffer->height,
             .biPlanes = 1,
             .biBitCount = 32,
             .biCompression = BI_RGB,
         },
     };
+
+    const int bitmap_mem_size = 
+        buffer->bytes_per_pixel * buffer->width * buffer->height;
+    buffer->mem = VirtualAlloc(0, bitmap_mem_size, MEM_COMMIT, PAGE_READWRITE);
+
+    buffer->stride = buffer->width * buffer->bytes_per_pixel;
 }
 
-static void update_window(
-    HDC device_ctx, 
-    RECT *client_rect,
+static void blit_buffer(
+    const HDC device_ctx, 
+    const int window_width,
+    const int window_height,
+    const Screen_Buffer buffer,
     const int x, 
     const int y, 
     const int width, 
@@ -61,16 +92,14 @@ static void update_window(
     (void)width;
     (void)height;
 
-    const int window_width = client_rect->right - client_rect->left;
-    const int window_height = client_rect->bottom - client_rect->top;
     StretchDIBits(
         device_ctx,
         // x, y, width, height,
         // x, y, width, height,
-        0, 0, bitmap_width, bitmap_height,
         0, 0, window_width, window_height,
-        bitmap_mem,
-        &bitmap_info,
+        0, 0, buffer.width, buffer.height,
+        buffer.mem,
+        &buffer.info,
         DIB_RGB_COLORS, 
         SRCCOPY
     );
@@ -111,21 +140,21 @@ LRESULT main_window_callback(
             const int width = paint.rcPaint.right - paint.rcPaint.left;
             const int height = paint.rcPaint.bottom - paint.rcPaint.top;
 
-            RECT client_rect;
-            GetClientRect(window_handle, &client_rect);
+            const Window_Dimension dim = get_window_dimension(window_handle);
 
-            update_window(device_ctx, &client_rect, x, y, width, height);
+            blit_buffer(
+                device_ctx, 
+                dim.width,
+                dim.height,
+                screen_buffer, 
+                x, y, width, height
+            );
 
             EndPaint(window_handle, &paint);
         } break;
         case WM_SIZE: {
-            RECT client_rect;
-            GetClientRect(window_handle, &client_rect);
-
-            int width = client_rect.right - client_rect.left;
-            int height = client_rect.bottom - client_rect.top;
-            resize_DIB_section(width, height);
-
+            // const Window_Dimension dim = get_window_dimension(window_handle);
+            // resize_DIB_section(&screen_buffer, dim.width, dim.height);
             OutputDebugStringA("WM_SIZE\n");
         } break;
         default: {
@@ -146,6 +175,8 @@ int CALLBACK WinMain(
     (void)prev_instance;
     (void)command_line;
     (void)show_code;
+
+    resize_DIB_section(&screen_buffer, 640, 360);
 
     WNDCLASSA window_class = {
         .style = CS_HREDRAW | CS_VREDRAW,
@@ -189,14 +220,17 @@ int CALLBACK WinMain(
             DispatchMessageA(&message);
         }
 
-        render_gradient(x_offset, y_offset);
+        render_gradient(screen_buffer, x_offset, y_offset);
 
         HDC device_ctx = GetDC(window_handle);
-        RECT client_rect;
-        GetClientRect(window_handle, &client_rect);
-        const int window_width = client_rect.right - client_rect.left;
-        const int window_height = client_rect.bottom - client_rect.top;
-        update_window(device_ctx, &client_rect, 0, 0, window_width, window_height);
+        const Window_Dimension dim = get_window_dimension(window_handle);
+        blit_buffer(
+            device_ctx, 
+            dim.width, 
+            dim.height,
+            screen_buffer, 
+            0, 0, dim.width, dim.height
+        );
         ReleaseDC(window_handle, device_ctx);
 
         x_offset += 1;
