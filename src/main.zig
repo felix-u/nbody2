@@ -14,6 +14,9 @@ inline fn colour(comptime rgb: u24) c.Color {
 }
 const colour_white = colour(0xffffff);
 const colour_black = colour(0x000000);
+const colour_grey = colour(0x707070);
+const colour_red = colour(0xff0000);
+const colour_blue = colour(0x5599ff);
 
 const logical_width = 640;
 const logical_height = 360;
@@ -23,7 +26,7 @@ const Body = struct {
     radius: f32 = undefined,
     x: f32 = undefined,
     y: f32 = undefined,
-    colour: c.Color = colour_black,
+    colour: c.Color = colour_white,
     vel_x: f32 = 0,
     vel_y: f32 = 0,
 };
@@ -57,9 +60,11 @@ pub fn main() void {
     while (!c.WindowShouldClose()) {
         c.BeginDrawing();
         defer c.EndDrawing();
-        c.ClearBackground(colour_white);
+        c.ClearBackground(colour_black);
 
         // Update ---
+        const delta = c.GetFrameTime();
+
         const mouse_pos = c.GetMousePosition();
         const mouse_wheel = c.GetMouseWheelMove();
         cursor_radius = cursor_radius + mouse_wheel * 10;
@@ -69,7 +74,7 @@ pub fn main() void {
             cursor_radius = cursor_radius_min;
         }
 
-        const G_constant = 3 * 10e-12;
+        const G_constant = 1 * 10e-10;
         if (c.IsMouseButtonPressed(c.MOUSE_BUTTON_LEFT) and
             bodies.len < bodies_cap)
         {
@@ -153,20 +158,34 @@ pub fn main() void {
                 }
             }
 
-            body.x += body.vel_x;
-            body.y += body.vel_y;
+            body.x += body.vel_x * delta;
+            body.y += body.vel_y * delta;
         }
 
         // Render ---
 
+        var fps_text_buf: [10]u8 = undefined;
+        const fps_text = std.fmt.bufPrint(
+            &fps_text_buf,
+            "{d}fps{c}",
+            .{ c.GetFPS(), 0 },
+        ) catch "invalid";
+        c.DrawText(
+            @ptrCast(fps_text),
+            screen_width / 40,
+            screen_height / 40,
+            screen_width / 40,
+            colour_grey,
+        );
+
         c.DrawRing(
             mouse_pos,
             cursor_radius,
-            cursor_radius + 3,
+            cursor_radius + 5,
             0,
             360,
             0,
-            colour_black,
+            colour_blue,
         );
 
         for (0..bodies.len) |body_i| {
