@@ -28,6 +28,17 @@ const Body = struct {
     vel_y: f32 = 0,
 };
 
+const bodies_cap = 100;
+const Bodies = struct {
+    bodies: [bodies_cap]Body = [_]Body{.{}} ** bodies_cap,
+    len: usize = 0,
+
+    fn add(self: *Bodies, body: Body) void {
+        self.bodies[self.len] = body;
+        self.len += 1;
+    }
+};
+
 pub fn main() void {
     const screen_width = logical_width * 4;
     const screen_height = logical_height * 4;
@@ -41,9 +52,7 @@ pub fn main() void {
     const cursor_radius_max = 100;
     var cursor_radius: f32 = cursor_radius_min * 4;
 
-    const bodies_cap = 100;
-    var bodies = [_]Body{.{}} ** bodies_cap;
-    var bodies_len: usize = 0;
+    var bodies = Bodies{};
 
     while (!c.WindowShouldClose()) {
         c.BeginDrawing();
@@ -61,20 +70,21 @@ pub fn main() void {
         }
 
         const G_constant = 3 * 10e-12;
-        if (c.IsMouseButtonPressed(c.MOUSE_BUTTON_LEFT)) {
-            bodies[bodies_len] = .{
+        if (c.IsMouseButtonPressed(c.MOUSE_BUTTON_LEFT) and
+            bodies.len < bodies_cap)
+        {
+            bodies.add(.{
                 .mass = std.math.pow(f32, cursor_radius, 3) * G_constant,
                 .radius = cursor_radius,
                 .x = mouse_pos.x / screen_width,
                 .y = mouse_pos.y / screen_height,
-            };
-            bodies_len += 1;
+            });
         }
 
-        for (0..bodies_len) |body_i| {
-            const body = &bodies[body_i];
-            for (0..bodies_len) |body_cmp_i| {
-                const body_cmp = &bodies[body_cmp_i];
+        for (0..bodies.len) |body_i| {
+            const body = &bodies.bodies[body_i];
+            for (0..bodies.len) |body_cmp_i| {
+                const body_cmp = &bodies.bodies[body_cmp_i];
                 if (body_cmp_i == body_i) continue;
 
                 const x_dist = body.x - body_cmp.x;
@@ -113,20 +123,34 @@ pub fn main() void {
 
             const dampen = 0.3;
 
-            if (body.x < 0) {
-                body.x = 0;
-                body.vel_x = -body.vel_x * dampen;
-            } else if (body.x > 1) {
-                body.x = 1;
-                body.vel_x = -body.vel_x * dampen;
-            }
+            if (c.CheckCollisionCircleRec(
+                .{ .x = body.x * screen_width, .y = body.y * screen_height },
+                body.radius,
+                .{
+                    .x = 0,
+                    .y = 0,
+                    .width = screen_width,
+                    .height = screen_height,
+                },
+            )) {
+                const x = body.x * screen_width;
+                const y = body.y * screen_height;
 
-            if (body.y < 0) {
-                body.y = 0;
-                body.vel_y = -body.vel_y * dampen;
-            } else if (body.y > 1) {
-                body.y = 1;
-                body.vel_y = -body.vel_y * dampen;
+                if (x - body.radius < 0) {
+                    body.x = body.radius / screen_width;
+                    body.vel_x = -body.vel_x * dampen;
+                } else if (x + body.radius > screen_width) {
+                    body.x = 1 - body.radius / screen_width;
+                    body.vel_x = -body.vel_x * dampen;
+                }
+
+                if (y - body.radius < 0) {
+                    body.y = body.radius / screen_height;
+                    body.vel_y = -body.vel_y * dampen;
+                } else if (y + body.radius > screen_height) {
+                    body.y = 1 - body.radius / screen_height;
+                    body.vel_y = -body.vel_y * dampen;
+                }
             }
 
             body.x += body.vel_x;
@@ -145,7 +169,8 @@ pub fn main() void {
             colour_black,
         );
 
-        for (bodies) |body| {
+        for (0..bodies.len) |body_i| {
+            const body = bodies.bodies[body_i];
             const x_coord: c_int = @intFromFloat(body.x * screen_width);
             const y_coord: c_int = @intFromFloat(body.y * screen_height);
             c.DrawCircle(x_coord, y_coord, body.radius, body.colour);
