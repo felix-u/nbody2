@@ -39,17 +39,24 @@ pub fn main() void {
 
     var bodies = [_]Body{
         .{
-            .mass = 50,
+            .mass = 1,
             .radius = 20,
             .x = 0.1,
             .y = 0.1,
             .colour = colour_black,
         },
         .{
+            .mass = 10,
+            .radius = 30,
+            .x = 0.9,
+            .y = 0.1,
+            .colour = colour_black,
+        },
+        .{
             .mass = 100,
             .radius = 40,
-            .x = 0.7,
-            .y = 0.6,
+            .x = 0.5,
+            .y = 0.9,
             .colour = colour_black,
         },
     };
@@ -61,7 +68,7 @@ pub fn main() void {
 
         // Update ---
 
-        const G_constant = 0.000001;
+        const G_constant = 0.0000001;
         const proximity_threshold = 0.1;
 
         for (&bodies, 0..bodies.len) |*body, body_i| {
@@ -70,16 +77,16 @@ pub fn main() void {
 
                 const x_dist = body.x - body_cmp.x;
                 const y_dist = body.y - body_cmp.y;
-                var dist = std.math.sqrt(
+                const dist = std.math.sqrt(
                     std.math.pow(f64, x_dist, 2) +
                         std.math.pow(f64, y_dist, 2),
                 );
 
                 if (dist < proximity_threshold) continue;
 
-                if (x_dist > 0 or y_dist > 0) dist = -dist;
-
-                const force = G_constant * body.mass * body_cmp.mass / dist;
+                const force = -1 *
+                    G_constant * body.mass * body_cmp.mass /
+                    std.math.pow(f64, dist, 2);
                 const force_x = force * (x_dist / dist);
                 const force_y = force * (y_dist / dist);
 
