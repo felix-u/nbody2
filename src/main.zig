@@ -43,6 +43,9 @@ const Bodies = struct {
     }
 };
 
+var init_vel_x: f32 = 0;
+var init_vel_y: f32 = 0;
+
 pub fn main() void {
     c.InitWindow(screen_width, screen_height, "nbody2");
     defer c.CloseWindow();
@@ -73,6 +76,18 @@ pub fn main() void {
             cursor_radius = cursor_radius_min;
         }
 
+        const vel_step = 0.1;
+        if (c.IsKeyPressed(c.KEY_UP)) {
+            init_vel_y -= vel_step;
+        } else if (c.IsKeyPressed(c.KEY_DOWN)) {
+            init_vel_y += vel_step;
+        }
+        if (c.IsKeyPressed(c.KEY_LEFT)) {
+            init_vel_x -= vel_step;
+        } else if (c.IsKeyPressed(c.KEY_RIGHT)) {
+            init_vel_x += vel_step;
+        }
+
         const G_constant = 3 * 10e-9 / target_fps;
         if (c.IsMouseButtonPressed(c.MOUSE_BUTTON_LEFT) and
             bodies.len < bodies_cap)
@@ -82,7 +97,8 @@ pub fn main() void {
                 .radius = cursor_radius,
                 .x = mouse_pos.x / screen_scale,
                 .y = mouse_pos.y / screen_scale,
-                .vel_x = if (cursor_radius == cursor_radius_min) -0.3 else 0,
+                .vel_x = init_vel_x,
+                .vel_y = init_vel_y,
             });
         }
 
@@ -134,8 +150,8 @@ pub fn main() void {
                 .{
                     .x = 0,
                     .y = 0,
-                    .width = screen_scale,
-                    .height = screen_scale,
+                    .width = screen_width,
+                    .height = screen_height,
                 },
             )) {
                 const x = body.x * screen_scale;
@@ -145,7 +161,7 @@ pub fn main() void {
                     body.x = body.radius / screen_scale;
                     body.vel_x = -body.vel_x * dampen;
                 } else if (x + body.radius > screen_width) {
-                    body.x = 1 - body.radius / screen_scale;
+                    body.x = (screen_width - body.radius) / screen_scale;
                     body.vel_x = -body.vel_x * dampen;
                 }
 
@@ -153,7 +169,7 @@ pub fn main() void {
                     body.y = body.radius / screen_scale;
                     body.vel_y = -body.vel_y * dampen;
                 } else if (y + body.radius > screen_height) {
-                    body.y = 1 - body.radius / screen_scale;
+                    body.y = (screen_height - body.radius) / screen_scale;
                     body.vel_y = -body.vel_y * dampen;
                 }
             }
