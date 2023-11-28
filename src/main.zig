@@ -3,20 +3,7 @@ const c = @cImport({
 });
 
 const std = @import("std");
-
-inline fn colour(comptime rgb: u24) c.Color {
-    return .{
-        .r = (rgb & 0xff0000) >> 16,
-        .g = (rgb & 0x00ff00) >> 8,
-        .b = (rgb & 0x0000ff),
-        .a = 0xff,
-    };
-}
-const colour_white = colour(0xffffff);
-const colour_black = colour(0x000000);
-const colour_grey = colour(0x707070);
-const colour_red = colour(0xff0000);
-const colour_blue = colour(0x5599ff);
+const render = @import("render.zig");
 
 const screen_scale = 1440;
 const screen_height = screen_scale;
@@ -27,7 +14,7 @@ const Body = struct {
     radius: f32 = undefined,
     x: f32 = undefined,
     y: f32 = undefined,
-    colour: c.Color = colour_white,
+    colour: c.Color = render.c_white,
     vel_x: f32 = 0,
     vel_y: f32 = 0,
 };
@@ -43,107 +30,154 @@ const Bodies = struct {
     }
 };
 
-const cursor_radius_min = 10;
-const cursor_radius_max = 100;
-
-const InitialVelocityDesc = struct {
+const Creator = struct {
     active: bool = false,
     body: Body = .{},
     x_displacement: f32 = 0,
     y_displacement: f32 = 0,
 };
 
-fn drawInitialVelocity(init_vel: InitialVelocityDesc) void {
-    if (!init_vel.active) return;
-    const start_x = init_vel.body.x * screen_scale;
-    const start_y = init_vel.body.y * screen_scale;
-    const end_x = (init_vel.body.x + init_vel.x_displacement) * screen_scale;
-    const end_y = (init_vel.body.y + init_vel.y_displacement) * screen_scale;
+fn drawCreator(creator: Creator) void {
+    if (!creator.active) return;
+    const start_x = creator.body.x * screen_scale;
+    const start_y = creator.body.y * screen_scale;
+    const end_x = (creator.body.x + creator.x_displacement) * screen_scale;
+    const end_y = (creator.body.y + creator.y_displacement) * screen_scale;
     c.DrawLineEx(
         .{ .x = start_x, .y = start_y },
         .{ .x = end_x, .y = end_y },
         4,
-        colour_grey,
+        render.c_grey,
     );
 
-    const x_coord: c_int = @intFromFloat(init_vel.body.x * screen_scale);
-    const y_coord: c_int = @intFromFloat(init_vel.body.y * screen_scale);
-    c.DrawCircle(x_coord, y_coord, init_vel.body.radius, colour_grey);
+    const x_coord = creator.body.x * screen_scale;
+    const y_coord = creator.body.y * screen_scale;
+    c.DrawRing(
+        .{ .x = x_coord, .y = y_coord },
+        creator.body.radius,
+        creator.body.radius + 5,
+        0,
+        360,
+        0,
+        render.c_grey,
+    );
 }
 
 pub fn main() void {
-    c.InitWindow(screen_width, screen_height, "nbody2");
-    defer c.CloseWindow();
+    var state = State{};
 
-    const target_fps: comptime_float = 360;
-    c.SetTargetFPS(target_fps);
+    render.init(screen_width, screen_height);
+    defer render.deinit();
 
-    const G_constant = 3 * 10e-9 / target_fps;
-
-    var cursor_radius: f32 = cursor_radius_min * 4;
-
-    var bodies = Bodies{};
-
-    var init_vel = InitialVelocityDesc{};
-
-    while (!c.WindowShouldClose()) {
-        c.BeginDrawing();
-        defer c.EndDrawing();
-        c.ClearBackground(colour_black);
+    while (!render.shouldQuit()) {
+        render.beginFrame();
+        defer render.endFrame();
 
         // Update ---
-        const delta = c.GetFrameTime();
+        state.step();
 
-        const mouse_pos = c.GetMousePosition();
-        const mouse_wheel = c.GetMouseWheelMove();
-        cursor_radius = cursor_radius + mouse_wheel * 10;
-        if (cursor_radius > cursor_radius_max) {
-            cursor_radius = cursor_radius_max;
-        } else if (cursor_radius < cursor_radius_min) {
-            cursor_radius = cursor_radius_min;
+        // Render ---
+
+        var fps_text_buf: [64]u8 = undefined;
+        const fps_text = std.fmt.bufPrint(
+            &fps_text_buf,
+            "{d}/{d}fps{c}",
+            .{ c.GetFPS(), State.target_fps, 0 },
+        ) catch "invalid";
+        c.DrawText(
+            @ptrCast(fps_text),
+            screen_width / 40,
+            screen_height / 40,
+            screen_width / 40,
+            render.c_grey,
+        );
+
+        if (!state.creator.active) c.DrawRing(
+            state.mouse_pos,
+            state.cursor_radius,
+            state.cursor_radius + 5,
+            0,
+            360,
+            0,
+            render.c_blue,
+        );
+
+        for (0..state.bodies.len) |body_i| {
+            const body = state.bodies.bodies[body_i];
+            const x_coord: c_int = @intFromFloat(body.x * screen_scale);
+            const y_coord: c_int = @intFromFloat(body.y * screen_scale);
+            c.DrawCircle(x_coord, y_coord, body.radius, body.colour);
         }
 
-        if (init_vel.active) {
+        drawCreator(state.creator);
+    }
+}
+
+const cursor_radius_min = 10;
+const cursor_radius_max = 100;
+
+pub const State = struct {
+    cursor_radius: f32 = cursor_radius_min * 3,
+    mouse_pos: c.Vector2 = undefined,
+    creator: Creator = .{},
+    bodies: Bodies = .{},
+
+    pub const target_fps: comptime_float = 360;
+    pub const G_constant = 3 * 10e-9 / target_fps;
+
+    pub fn step(self: *State) void {
+        const delta = c.GetFrameTime();
+
+        self.mouse_pos = c.GetMousePosition();
+        const mouse_wheel = c.GetMouseWheelMove();
+        self.cursor_radius += mouse_wheel * 10;
+        if (self.cursor_radius > cursor_radius_max) {
+            self.cursor_radius = cursor_radius_max;
+        } else if (self.cursor_radius < cursor_radius_min) {
+            self.cursor_radius = cursor_radius_min;
+        }
+
+        if (self.creator.active) {
             if (c.IsMouseButtonDown(c.MOUSE_BUTTON_RIGHT)) {
-                init_vel.x_displacement = (mouse_pos.x / screen_scale) - init_vel.body.x;
-                init_vel.y_displacement = (mouse_pos.y / screen_scale) - init_vel.body.y;
+                self.creator.x_displacement = (self.mouse_pos.x / screen_scale) - self.creator.body.x;
+                self.creator.y_displacement = (self.mouse_pos.y / screen_scale) - self.creator.body.y;
             } else if (c.IsMouseButtonReleased(c.MOUSE_BUTTON_RIGHT)) {
-                init_vel.active = false;
-                init_vel.body.vel_x = init_vel.x_displacement;
-                init_vel.body.vel_y = init_vel.y_displacement;
-                bodies.add(init_vel.body);
+                self.creator.active = false;
+                self.creator.body.vel_x = self.creator.x_displacement;
+                self.creator.body.vel_y = self.creator.y_displacement;
+                self.bodies.add(self.creator.body);
             }
 
             if (c.IsMouseButtonPressed(c.MOUSE_BUTTON_LEFT)) {
-                init_vel.body.vel_x = init_vel.x_displacement;
-                init_vel.body.vel_y = init_vel.y_displacement;
-                bodies.add(init_vel.body);
+                self.creator.body.vel_x = self.creator.x_displacement;
+                self.creator.body.vel_y = self.creator.y_displacement;
+                self.bodies.add(self.creator.body);
             }
         } else {
             if (c.IsMouseButtonPressed(c.MOUSE_BUTTON_RIGHT)) {
-                init_vel.active = true;
-                init_vel.body.x = mouse_pos.x / screen_scale;
-                init_vel.body.y = mouse_pos.y / screen_scale;
-                init_vel.body.mass = std.math.pow(f32, cursor_radius, 3) * G_constant;
-                init_vel.body.radius = cursor_radius;
+                self.creator.active = true;
+                self.creator.body.x = self.mouse_pos.x / screen_scale;
+                self.creator.body.y = self.mouse_pos.y / screen_scale;
+                self.creator.body.mass = std.math.pow(f32, self.cursor_radius, 3) * G_constant;
+                self.creator.body.radius = self.cursor_radius;
             }
 
             if (c.IsMouseButtonPressed(c.MOUSE_BUTTON_LEFT) and
-                bodies.len < bodies_cap)
+                self.bodies.len < bodies_cap)
             {
-                bodies.add(.{
-                    .mass = std.math.pow(f32, cursor_radius, 3) * G_constant,
-                    .radius = cursor_radius,
-                    .x = mouse_pos.x / screen_scale,
-                    .y = mouse_pos.y / screen_scale,
+                self.bodies.add(.{
+                    .mass = std.math.pow(f32, self.cursor_radius, 3) * G_constant,
+                    .radius = self.cursor_radius,
+                    .x = self.mouse_pos.x / screen_scale,
+                    .y = self.mouse_pos.y / screen_scale,
                 });
             }
         }
 
-        for (0..bodies.len) |body_i| {
-            const body = &bodies.bodies[body_i];
-            for (0..bodies.len) |body_cmp_i| {
-                const body_cmp = &bodies.bodies[body_cmp_i];
+        for (0..self.bodies.len) |body_i| {
+            const body = &self.bodies.bodies[body_i];
+            for (0..self.bodies.len) |body_cmp_i| {
+                const body_cmp = &self.bodies.bodies[body_cmp_i];
                 if (body_cmp_i == body_i) continue;
 
                 const x_dist = body.x - body_cmp.x;
@@ -215,40 +249,5 @@ pub fn main() void {
             body.x += body.vel_x * delta;
             body.y += body.vel_y * delta;
         }
-
-        // Render ---
-
-        var fps_text_buf: [64]u8 = undefined;
-        const fps_text = std.fmt.bufPrint(
-            &fps_text_buf,
-            "{d}/{d}fps{c}",
-            .{ c.GetFPS(), target_fps, 0 },
-        ) catch "invalid";
-        c.DrawText(
-            @ptrCast(fps_text),
-            screen_width / 40,
-            screen_height / 40,
-            screen_width / 40,
-            colour_grey,
-        );
-
-        if (!init_vel.active) c.DrawRing(
-            mouse_pos,
-            cursor_radius,
-            cursor_radius + 5,
-            0,
-            360,
-            0,
-            colour_blue,
-        );
-
-        for (0..bodies.len) |body_i| {
-            const body = bodies.bodies[body_i];
-            const x_coord: c_int = @intFromFloat(body.x * screen_scale);
-            const y_coord: c_int = @intFromFloat(body.y * screen_scale);
-            c.DrawCircle(x_coord, y_coord, body.radius, body.colour);
-        }
-
-        drawInitialVelocity(init_vel);
     }
-}
+};
