@@ -18,8 +18,9 @@ const colour_grey = colour(0x707070);
 const colour_red = colour(0xff0000);
 const colour_blue = colour(0x5599ff);
 
-const logical_width = 640;
-const logical_height = 360;
+const screen_scale = 1440;
+const screen_height = screen_scale;
+const screen_width = 2560;
 
 const Body = struct {
     mass: f32 = undefined,
@@ -43,13 +44,11 @@ const Bodies = struct {
 };
 
 pub fn main() void {
-    const screen_width = logical_width * 4;
-    const screen_height = logical_height * 4;
-
     c.InitWindow(screen_width, screen_height, "nbody2");
     defer c.CloseWindow();
 
-    c.SetTargetFPS(60);
+    const target_fps: comptime_float = 360;
+    c.SetTargetFPS(target_fps);
 
     const cursor_radius_min = 10;
     const cursor_radius_max = 100;
@@ -74,15 +73,16 @@ pub fn main() void {
             cursor_radius = cursor_radius_min;
         }
 
-        const G_constant = 1 * 10e-10;
+        const G_constant = 3 * 10e-9 / target_fps;
         if (c.IsMouseButtonPressed(c.MOUSE_BUTTON_LEFT) and
             bodies.len < bodies_cap)
         {
             bodies.add(.{
                 .mass = std.math.pow(f32, cursor_radius, 3) * G_constant,
                 .radius = cursor_radius,
-                .x = mouse_pos.x / screen_width,
-                .y = mouse_pos.y / screen_height,
+                .x = mouse_pos.x / screen_scale,
+                .y = mouse_pos.y / screen_scale,
+                .vel_x = if (cursor_radius == cursor_radius_min) -0.3 else 0,
             });
         }
 
@@ -101,15 +101,15 @@ pub fn main() void {
 
                 const colliding = c.CheckCollisionCircles(
                     .{
-                        .x = body.x * screen_width,
-                        .y = body.y * screen_height,
+                        .x = body.x * screen_scale,
+                        .y = body.y * screen_scale,
                     },
-                    body.radius,
+                    body.radius / 2,
                     .{
-                        .x = body_cmp.x * screen_width,
-                        .y = body_cmp.y * screen_height,
+                        .x = body_cmp.x * screen_scale,
+                        .y = body_cmp.y * screen_scale,
                     },
-                    body_cmp.radius,
+                    body_cmp.radius / 2,
                 );
                 if (colliding) continue;
 
@@ -129,31 +129,31 @@ pub fn main() void {
             const dampen = 0.3;
 
             if (c.CheckCollisionCircleRec(
-                .{ .x = body.x * screen_width, .y = body.y * screen_height },
+                .{ .x = body.x * screen_scale, .y = body.y * screen_scale },
                 body.radius,
                 .{
                     .x = 0,
                     .y = 0,
-                    .width = screen_width,
-                    .height = screen_height,
+                    .width = screen_scale,
+                    .height = screen_scale,
                 },
             )) {
-                const x = body.x * screen_width;
-                const y = body.y * screen_height;
+                const x = body.x * screen_scale;
+                const y = body.y * screen_scale;
 
                 if (x - body.radius < 0) {
-                    body.x = body.radius / screen_width;
+                    body.x = body.radius / screen_scale;
                     body.vel_x = -body.vel_x * dampen;
                 } else if (x + body.radius > screen_width) {
-                    body.x = 1 - body.radius / screen_width;
+                    body.x = 1 - body.radius / screen_scale;
                     body.vel_x = -body.vel_x * dampen;
                 }
 
                 if (y - body.radius < 0) {
-                    body.y = body.radius / screen_height;
+                    body.y = body.radius / screen_scale;
                     body.vel_y = -body.vel_y * dampen;
                 } else if (y + body.radius > screen_height) {
-                    body.y = 1 - body.radius / screen_height;
+                    body.y = 1 - body.radius / screen_scale;
                     body.vel_y = -body.vel_y * dampen;
                 }
             }
@@ -164,11 +164,11 @@ pub fn main() void {
 
         // Render ---
 
-        var fps_text_buf: [10]u8 = undefined;
+        var fps_text_buf: [64]u8 = undefined;
         const fps_text = std.fmt.bufPrint(
             &fps_text_buf,
-            "{d}fps{c}",
-            .{ c.GetFPS(), 0 },
+            "{d}/{d}fps{c}",
+            .{ c.GetFPS(), target_fps, 0 },
         ) catch "invalid";
         c.DrawText(
             @ptrCast(fps_text),
@@ -190,8 +190,8 @@ pub fn main() void {
 
         for (0..bodies.len) |body_i| {
             const body = bodies.bodies[body_i];
-            const x_coord: c_int = @intFromFloat(body.x * screen_width);
-            const y_coord: c_int = @intFromFloat(body.y * screen_height);
+            const x_coord: c_int = @intFromFloat(body.x * screen_scale);
+            const y_coord: c_int = @intFromFloat(body.y * screen_scale);
             c.DrawCircle(x_coord, y_coord, body.radius, body.colour);
         }
     }
