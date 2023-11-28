@@ -43,8 +43,8 @@ const Bodies = struct {
     }
 };
 
-// var init_vel_x: f32 = 0;
-// var init_vel_y: f32 = 0;
+const cursor_radius_min = 10;
+const cursor_radius_max = 100;
 
 const InitialVelocityDesc = struct {
     active: bool = false,
@@ -55,15 +55,16 @@ const InitialVelocityDesc = struct {
 
 fn drawInitialVelocity(init_vel: InitialVelocityDesc) void {
     if (!init_vel.active) return;
-    const start_x: c_int = @intFromFloat(init_vel.body.x * screen_scale);
-    const start_y: c_int = @intFromFloat(init_vel.body.y * screen_scale);
-    const end_x: c_int = @intFromFloat(
-        (init_vel.body.x + init_vel.x_displacement) * screen_scale,
+    const start_x = init_vel.body.x * screen_scale;
+    const start_y = init_vel.body.y * screen_scale;
+    const end_x = (init_vel.body.x + init_vel.x_displacement) * screen_scale;
+    const end_y = (init_vel.body.y + init_vel.y_displacement) * screen_scale;
+    c.DrawLineEx(
+        .{ .x = start_x, .y = start_y },
+        .{ .x = end_x, .y = end_y },
+        4,
+        colour_grey,
     );
-    const end_y: c_int = @intFromFloat(
-        (init_vel.body.y + init_vel.y_displacement) * screen_scale,
-    );
-    c.DrawLine(start_x, start_y, end_x, end_y, colour_grey);
 
     const x_coord: c_int = @intFromFloat(init_vel.body.x * screen_scale);
     const y_coord: c_int = @intFromFloat(init_vel.body.y * screen_scale);
@@ -79,8 +80,6 @@ pub fn main() void {
 
     const G_constant = 3 * 10e-9 / target_fps;
 
-    const cursor_radius_min = 10;
-    const cursor_radius_max = 100;
     var cursor_radius: f32 = cursor_radius_min * 4;
 
     var bodies = Bodies{};
@@ -104,45 +103,41 @@ pub fn main() void {
             cursor_radius = cursor_radius_min;
         }
 
-        // const vel_step = 0.1;
-        // if (c.IsKeyPressed(c.KEY_UP)) {
-        //     init_vel_y -= vel_step;
-        // } else if (c.IsKeyPressed(c.KEY_DOWN)) {
-        //     init_vel_y += vel_step;
-        // }
-        // if (c.IsKeyPressed(c.KEY_LEFT)) {
-        //     init_vel_x -= vel_step;
-        // } else if (c.IsKeyPressed(c.KEY_RIGHT)) {
-        //     init_vel_x += vel_step;
-        // }
+        if (init_vel.active) {
+            if (c.IsMouseButtonDown(c.MOUSE_BUTTON_RIGHT)) {
+                init_vel.x_displacement = (mouse_pos.x / screen_scale) - init_vel.body.x;
+                init_vel.y_displacement = (mouse_pos.y / screen_scale) - init_vel.body.y;
+            } else if (c.IsMouseButtonReleased(c.MOUSE_BUTTON_RIGHT)) {
+                init_vel.active = false;
+                init_vel.body.vel_x = init_vel.x_displacement;
+                init_vel.body.vel_y = init_vel.y_displacement;
+                bodies.add(init_vel.body);
+            }
 
-        if (!init_vel.active and
-            c.IsMouseButtonPressed(c.MOUSE_BUTTON_RIGHT))
-        {
-            init_vel.active = true;
-            init_vel.body.x = mouse_pos.x / screen_scale;
-            init_vel.body.y = mouse_pos.y / screen_scale;
-            init_vel.body.mass = std.math.pow(f32, cursor_radius, 3) * G_constant;
-            init_vel.body.radius = cursor_radius;
-        } else if (c.IsMouseButtonDown(c.MOUSE_BUTTON_RIGHT)) {
-            init_vel.x_displacement = (mouse_pos.x / screen_scale) - init_vel.body.x;
-            init_vel.y_displacement = (mouse_pos.y / screen_scale) - init_vel.body.y;
-        } else if (c.IsMouseButtonReleased(c.MOUSE_BUTTON_RIGHT)) {
-            init_vel.active = false;
-            init_vel.body.vel_x = init_vel.x_displacement;
-            init_vel.body.vel_y = init_vel.y_displacement;
-            bodies.add(init_vel.body);
-        }
+            if (c.IsMouseButtonPressed(c.MOUSE_BUTTON_LEFT)) {
+                init_vel.body.vel_x = init_vel.x_displacement;
+                init_vel.body.vel_y = init_vel.y_displacement;
+                bodies.add(init_vel.body);
+            }
+        } else {
+            if (c.IsMouseButtonPressed(c.MOUSE_BUTTON_RIGHT)) {
+                init_vel.active = true;
+                init_vel.body.x = mouse_pos.x / screen_scale;
+                init_vel.body.y = mouse_pos.y / screen_scale;
+                init_vel.body.mass = std.math.pow(f32, cursor_radius, 3) * G_constant;
+                init_vel.body.radius = cursor_radius;
+            }
 
-        if (c.IsMouseButtonPressed(c.MOUSE_BUTTON_LEFT) and
-            bodies.len < bodies_cap)
-        {
-            bodies.add(.{
-                .mass = std.math.pow(f32, cursor_radius, 3) * G_constant,
-                .radius = cursor_radius,
-                .x = mouse_pos.x / screen_scale,
-                .y = mouse_pos.y / screen_scale,
-            });
+            if (c.IsMouseButtonPressed(c.MOUSE_BUTTON_LEFT) and
+                bodies.len < bodies_cap)
+            {
+                bodies.add(.{
+                    .mass = std.math.pow(f32, cursor_radius, 3) * G_constant,
+                    .radius = cursor_radius,
+                    .x = mouse_pos.x / screen_scale,
+                    .y = mouse_pos.y / screen_scale,
+                });
+            }
         }
 
         for (0..bodies.len) |body_i| {
@@ -237,7 +232,7 @@ pub fn main() void {
             colour_grey,
         );
 
-        c.DrawRing(
+        if (!init_vel.active) c.DrawRing(
             mouse_pos,
             cursor_radius,
             cursor_radius + 5,
