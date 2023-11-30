@@ -9,7 +9,7 @@ const std = @import("std");
 pub fn main() void {
     var state = State{};
 
-    render.init();
+    render.init(&state);
     defer render.deinit();
 
     while (!render.shouldQuit()) {
@@ -28,6 +28,7 @@ pub const State = struct {
     cursor_radius: f32 = cursor_radius_min * 3,
     delta: f32 = 0,
     mouse_pos: c.Vector2 = undefined,
+    camera: render.Camera = .{},
 
     pub const cursor_radius_min = 10;
     pub const cursor_radius_max = 100;
@@ -40,8 +41,33 @@ pub const State = struct {
 
     pub fn step(self: *State) void {
         self.stepCursor();
+        self.stepCamera();
         self.stepCreator();
         self.stepBodies();
+    }
+
+    fn stepCamera(self: *State) void {
+        const camera = &self.camera;
+
+        if (!camera.active) {
+            if (!c.IsKeyDown('C')) return;
+            camera.active = true;
+        }
+
+        if (!c.IsKeyDown('C')) {
+            camera.active = false;
+            return;
+        }
+
+        var delta = c.GetMouseDelta();
+        delta.x = render.normalFromScreen(self.*, delta.x);
+        delta.y = render.normalFromScreen(self.*, delta.y);
+
+        camera.x += delta.x;
+        camera.y += delta.y;
+
+        // const wheel = c.GetMouseWheelMove();
+        // if (wheel == 0) return;
     }
 
     fn stepCursor(self: *State) void {
@@ -63,8 +89,10 @@ pub const State = struct {
 
         if (creator.active) {
             if (c.IsMouseButtonDown(c.MOUSE_BUTTON_RIGHT)) {
-                creator.x_displacement = (mouse.x / screen_scale) - body.x;
-                creator.y_displacement = (mouse.y / screen_scale) - body.y;
+                creator.x_displacement =
+                    render.normalFromScreen(self.*, mouse.x) - body.x;
+                creator.y_displacement =
+                    render.normalFromScreen(self.*, mouse.y) - body.y;
             } else if (c.IsMouseButtonReleased(c.MOUSE_BUTTON_RIGHT)) {
                 creator.active = false;
                 body.vel_x = creator.x_displacement;
@@ -80,8 +108,8 @@ pub const State = struct {
         } else {
             if (c.IsMouseButtonPressed(c.MOUSE_BUTTON_RIGHT)) {
                 creator.active = true;
-                body.x = mouse.x / screen_scale;
-                body.y = mouse.y / screen_scale;
+                body.x = render.normalFromScreen(self.*, mouse.x);
+                body.y = render.normalFromScreen(self.*, mouse.y);
                 body.mass = std.math.pow(f32, self.cursor_radius, 3) * G;
                 body.radius = self.cursor_radius;
             }
@@ -92,8 +120,8 @@ pub const State = struct {
                 bodies.add(.{
                     .mass = std.math.pow(f32, self.cursor_radius, 3) * G,
                     .radius = self.cursor_radius,
-                    .x = mouse.x / screen_scale,
-                    .y = mouse.y / screen_scale,
+                    .x = render.normalFromScreen(self.*, mouse.x),
+                    .y = render.normalFromScreen(self.*, mouse.y),
                 });
             }
         }
