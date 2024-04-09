@@ -33,9 +33,9 @@ pub const State = struct {
     pub const cursor_radius_min = 10;
     pub const cursor_radius_max = 100;
     pub const screen_collision_dampen = 0.3;
-    pub const screen_scale = 1440;
+    pub const screen_scale = 900;
     pub const screen_height = screen_scale;
-    pub const screen_width = 2560;
+    pub const screen_width = 1800;
     pub const target_fps: comptime_float = 360;
     pub const G = 3 * 10e-9 / target_fps;
 
