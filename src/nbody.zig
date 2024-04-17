@@ -67,7 +67,12 @@ pub const Bodies = struct {
         self.len += 1;
     }
 
-    pub fn computeInteraction(self: *Bodies, i: usize, cmp_i: usize) void {
+    pub fn computeInteraction(
+        self: *Bodies,
+        delta: f32,
+        i: usize,
+        cmp_i: usize,
+    ) void {
         const body = &self.bodies[i];
         const body_cmp = &self.bodies[cmp_i];
         const x_dist = body.x - body_cmp.x;
@@ -90,7 +95,7 @@ pub const Bodies = struct {
         );
         if (colliding) return;
 
-        const force = -1 *
+        const force = -1 * delta *
             body.mass * body_cmp.mass / std.math.pow(f32, dist, 2);
         const force_x = force * (x_dist / dist);
         const force_y = force * (y_dist / dist);

@@ -33,9 +33,9 @@ pub const State = struct {
     pub const cursor_radius_min = 10;
     pub const cursor_radius_max = 100;
     pub const screen_collision_dampen = 0.3;
-    pub const screen_scale = 900;
+    pub const screen_scale = 1440;
     pub const screen_height = screen_scale;
-    pub const screen_width = 1800;
+    pub const screen_width = 2560;
     pub const target_fps: comptime_float = 360;
     pub const G = 3 * 10e-9 / target_fps;
 
@@ -88,6 +88,8 @@ pub const State = struct {
         const mouse = &self.mouse_pos;
 
         if (creator.active) {
+            const factor = 300;
+
             if (c.IsMouseButtonDown(c.MOUSE_BUTTON_RIGHT)) {
                 creator.x_displacement =
                     render.normalFromScreen(self.*, mouse.x) - body.x;
@@ -95,14 +97,14 @@ pub const State = struct {
                     render.normalFromScreen(self.*, mouse.y) - body.y;
             } else if (c.IsMouseButtonReleased(c.MOUSE_BUTTON_RIGHT)) {
                 creator.active = false;
-                body.vel_x = creator.x_displacement;
-                body.vel_y = creator.y_displacement;
+                body.vel_x = creator.x_displacement / factor;
+                body.vel_y = creator.y_displacement / factor;
                 bodies.add(body.*);
             }
 
             if (c.IsMouseButtonPressed(c.MOUSE_BUTTON_LEFT)) {
-                body.vel_x = creator.x_displacement;
-                body.vel_y = creator.y_displacement;
+                body.vel_x = creator.x_displacement / factor;
+                body.vel_y = creator.y_displacement / factor;
                 bodies.add(body.*);
             }
         } else {
@@ -132,13 +134,15 @@ pub const State = struct {
             const body = &self.bodies.bodies[body_i];
             for (0..self.bodies.len) |body_cmp_i| {
                 if (body_cmp_i == body_i) continue;
-                self.bodies.computeInteraction(body_i, body_cmp_i);
+                self.bodies.computeInteraction(self.delta, body_i, body_cmp_i);
             }
 
             body.computeScreenCollision();
 
-            body.x += body.vel_x * self.delta;
-            body.y += body.vel_y * self.delta;
+            // body.x += body.vel_x * self.delta;
+            // body.y += body.vel_y * self.delta;
+            body.x += body.vel_x;
+            body.y += body.vel_y;
         }
     }
 };
