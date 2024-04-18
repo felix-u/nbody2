@@ -1,5 +1,6 @@
 typedef struct Body {
-    f32 mass, radius, x, y, velocity_x, velocity_y;
+    f32 mass, radius;
+    Vector2 pos, velocity;
     Color colour;
 } Body;
 typedef Array(Body) Array_Body;
@@ -7,7 +8,7 @@ typedef Array(Body) Array_Body;
 typedef struct Creator {
     bool active;
     Body body;
-    f32 x_displacement, y_displacement;
+    Vector2 displacement;
 } Creator;
 
 typedef struct Context {
@@ -15,10 +16,9 @@ typedef struct Context {
     char *name;
     int width, height, fps;
 
-    f32 G;
+    f32 G, delta, cursor_radius;
     Array_Body bodies;
     Creator creator;
-    f32 cursor_radius, delta;
     Vector2 mouse_pos;
 } Context;
 
@@ -78,8 +78,8 @@ static void game_compute_interaction(Context *ctx, usize i, usize cmp_i) {
     Body *body = &ctx->bodies.ptr[i];
     Body *body_cmp = &ctx->bodies.ptr[cmp_i];
 
-    f32 x_dist = body->x - body_cmp->x;
-    f32 y_dist = body->y - body_cmp->y;
+    f32 x_dist = body->pos.x - body_cmp->pos.x;
+    f32 y_dist = body->pos.y - body_cmp->pos.y;
     f32 dist = sqrtf(x_dist * x_dist + y_dist * y_dist);
 
     bool colliding = 
@@ -90,44 +90,59 @@ static void game_compute_interaction(Context *ctx, usize i, usize cmp_i) {
     f32 force_x = force * (x_dist / dist);
     f32 force_y = force * (y_dist / dist);
 
-    f32 body_accel_x = force_x / body->mass;
-    f32 body_accel_y = force_y / body->mass;
-    body->velocity_x += body_accel_x;
-    body->velocity_y += body_accel_y;
+    Vector2 body_accel = { force_x / body->mass, force_y / body->mass };
+    body->velocity.x += body_accel.x;
+    body->velocity.y += body_accel.y;
 
-    f32 body_cmp_accel_x = force_x / body_cmp->mass;
-    f32 body_cmp_accel_y = force_y / body_cmp->mass;
-    body_cmp->velocity_x -= body_cmp_accel_x;
-    body_cmp->velocity_y -= body_cmp_accel_y;
+    Vector2 body_cmp_accel = { 
+        force_x / body_cmp->mass, force_y / body_cmp->mass 
+    };
+    body_cmp->velocity.x -= body_cmp_accel.x;
+    body_cmp->velocity.y -= body_cmp_accel.y;
+}
+
+static Vector2 Vector2_scale(Vector2 v, f32 s) {
+    return (Vector2){ v.x * s, v.y * s };
+}
+
+static Vector2 Vector2_add(Vector2 v1, Vector2 v2) {
+    return (Vector2){ v1.x + v2.x, v1.y + v2.y };
+}
+
+static Vector2 Vector2_sub(Vector2 v1, Vector2 v2) {
+    return (Vector2){ v1.x - v2.x, v1.y - v2.y };
+}
+
+static Vector2 Vector2_divide(Vector2 v, f32 divide) {
+    return (Vector2){ v.x / divide, v.y / divide };
 }
 
 static void game_compute_screen_collision(Context *ctx, usize i) {
     Body *body = &ctx->bodies.ptr[i];
 
+    Vector2 pos = Vector2_scale(body->pos, (f32)ctx->height);
+
     bool colliding = CheckCollisionCircleRec(
-        (Vector2){ body->x * (f32)ctx->height, body->y * (f32)ctx->height },
+        pos,
         body->radius,
         (Rectangle){ 0, 0, (f32)ctx->width, (f32)ctx->height }
     );
     if (!colliding) return;
 
-    f32 x = body->x * (f32)ctx->height;
-    f32 y = body->y * (f32)ctx->height;
-
-    if (x - body->radius < 0) {
-        body->x = body->radius / (f32)ctx->height;
-        body->velocity_x *= -game_collision_dampen;
-    } else if (x + body->radius > (f32)ctx->width) {
-        body->x = ((f32)ctx->width - body->radius) / (f32)ctx->height;
-        body->velocity_x *= -game_collision_dampen;
+    if (pos.x - body->radius < 0) {
+        body->pos.x = body->radius / (f32)ctx->height;
+        body->velocity.x *= -game_collision_dampen;
+    } else if (pos.x + body->radius > (f32)ctx->width) {
+        body->pos.x = ((f32)ctx->width - body->radius) / (f32)ctx->height;
+        body->velocity.x *= -game_collision_dampen;
     }
 
-    if (y - body->radius < 0) {
-        body->y = body->radius / (f32)ctx->height;
-        body->velocity_y *= -game_collision_dampen;
-    } else if (y + body->radius > (f32)ctx->height) {
-        body->y = ((f32)ctx->height - body->radius) / (f32)ctx->height;
-        body->velocity_y *= -game_collision_dampen;
+    if (pos.y - body->radius < 0) {
+        body->pos.y = body->radius / (f32)ctx->height;
+        body->velocity.y *= -game_collision_dampen;
+    } else if (pos.y + body->radius > (f32)ctx->height) {
+        body->pos.y = ((f32)ctx->height - body->radius) / (f32)ctx->height;
+        body->velocity.y *= -game_collision_dampen;
     }
 }
 
@@ -143,22 +158,18 @@ static void game_render_creator(Context *ctx) {
         return;
     }
 
-    f32 start_x = screen_from_normal(ctx, creator.body.x);
-    f32 start_y = screen_from_normal(ctx, creator.body.y);
-    f32 end_x = screen_from_normal(ctx, 
-        creator.body.x + creator.x_displacement);
-    f32 end_y = screen_from_normal(ctx, 
-        creator.body.y + creator.y_displacement);
+    Vector2 start = Vector2_scale(creator.body.pos, (f32)ctx->height);
+    Vector2 end = Vector2_scale(
+        Vector2_add(creator.body.pos, creator.displacement),
+        (f32)ctx->height
+    );
     DrawLineEx(
-        (Vector2){ start_x, start_y }, (Vector2){ end_x, end_y },
+        start, end,
         creator_displacement_line_thickness, colour_creator_displacement_line
     );
 
     DrawRing(
-        (Vector2){ 
-            screen_from_normal(ctx, creator.body.x),
-            screen_from_normal(ctx, creator.body.y),
-        },
+        Vector2_scale(creator.body.pos, (f32)ctx->height),
         creator.body.radius, creator.body.radius + creator_ring_thickness,
         0, 360, 0, colour_creator_active
     ); 
@@ -179,27 +190,23 @@ static void game_update_and_render(Context *ctx) {
         f32 factor = 300.0f;
 
         if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
-            creator->x_displacement = 
-                normal_from_screen(ctx, mouse.x) - creator->body.x;
-            creator->y_displacement = 
-                normal_from_screen(ctx, mouse.y) - creator->body.y;
+            creator->displacement = Vector2_sub(
+                Vector2_scale(mouse, 1.0f / (f32)ctx->height), 
+                creator->body.pos
+            );
         } else if (IsMouseButtonReleased(MOUSE_BUTTON_RIGHT)) {
             creator->active = false;
-            creator->body.velocity_x = creator->x_displacement / factor;
-            creator->body.velocity_y = creator->y_displacement / factor;
-            array_push(&ctx->arena, bodies, &creator->body);
         }
 
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            creator->body.velocity_x = creator->x_displacement / factor;
-            creator->body.velocity_y = creator->y_displacement / factor;
+            creator->body.velocity = 
+                Vector2_divide(creator->displacement, factor);
             array_push(&ctx->arena, bodies, &creator->body);
         }
     } else {
         if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
             creator->active = true;
-            creator->body.x = normal_from_screen(ctx, mouse.x);
-            creator->body.y = normal_from_screen(ctx, mouse.y);
+            creator->body.pos = Vector2_scale(mouse, 1.0f / (f32)ctx->height);
             creator->body.mass = powf(ctx->cursor_radius, 3) * ctx->G;
             creator->body.radius = ctx->cursor_radius;
         }
@@ -208,8 +215,7 @@ static void game_update_and_render(Context *ctx) {
             array_push(&ctx->arena, bodies, &((Body){
                 .mass = powf(ctx->cursor_radius, 3) * ctx->G,
                 .radius = ctx->cursor_radius,
-                .x = normal_from_screen(ctx, mouse.x),
-                .y = normal_from_screen(ctx, mouse.y),
+                .pos = Vector2_scale(mouse, 1.0f / (f32)ctx->height),
                 .colour = colour_body,
             }));
         }
@@ -223,12 +229,10 @@ static void game_update_and_render(Context *ctx) {
         game_compute_screen_collision(ctx, i);
 
         Body *body = &bodies->ptr[i];
-        body->x += body->velocity_x;
-        body->y += body->velocity_y;
+        body->pos = Vector2_add(body->pos, body->velocity);
 
-        int x_coord = (int)screen_from_normal(ctx, body->x);
-        int y_coord = (int)screen_from_normal(ctx, body->y);
-        DrawCircle(x_coord, y_coord, body->radius, body->colour);
+        Vector2 pos = Vector2_scale(body->pos, (f32)ctx->height);
+        DrawCircle((int)pos.x, (int)pos.y, body->radius, body->colour);
     }
 
     game_render_creator(ctx);
