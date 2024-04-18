@@ -60,7 +60,7 @@ static void game_init(Context *ctx) {
     SetConfigFlags(FLAG_MSAA_4X_HINT);
     SetTargetFPS(ctx->fps);
     InitWindow(ctx->width, ctx->height, ctx->name);
-    ctx->G = 3E-9f / (f32)ctx->fps;
+    ctx->G = 3E-8f / (f32)ctx->fps;
     ctx->creator.body.colour = colour_body;
 }
 
@@ -75,16 +75,60 @@ static void game_frame_begin(Context *ctx) {
 static void game_frame_end(Context *ctx) { discard(ctx); EndDrawing(); }
 
 static void game_compute_interaction(Context *ctx, usize i, usize cmp_i) {
-    // TODO
-    discard(ctx);
-    discard(i);
-    discard(cmp_i);
+    Body *body = &ctx->bodies.ptr[i];
+    Body *body_cmp = &ctx->bodies.ptr[cmp_i];
+
+    f32 x_dist = body->x - body_cmp->x;
+    f32 y_dist = body->y - body_cmp->y;
+    f32 dist = sqrtf(x_dist * x_dist + y_dist * y_dist);
+
+    bool colliding = 
+        dist < (body->radius + body_cmp->radius) / (f32)ctx->height / 2.0f;
+    if (colliding) return;
+
+    f32 force = -1 * ctx->delta * body->mass * body_cmp->mass / (dist * dist);
+    f32 force_x = force * (x_dist / dist);
+    f32 force_y = force * (y_dist / dist);
+
+    f32 body_accel_x = force_x / body->mass;
+    f32 body_accel_y = force_y / body->mass;
+    body->velocity_x += body_accel_x;
+    body->velocity_y += body_accel_y;
+
+    f32 body_cmp_accel_x = force_x / body_cmp->mass;
+    f32 body_cmp_accel_y = force_y / body_cmp->mass;
+    body_cmp->velocity_x -= body_cmp_accel_x;
+    body_cmp->velocity_y -= body_cmp_accel_y;
 }
 
 static void game_compute_screen_collision(Context *ctx, usize i) {
-    // TODO
-    discard(ctx);
-    discard(i);
+    Body *body = &ctx->bodies.ptr[i];
+
+    bool colliding = CheckCollisionCircleRec(
+        (Vector2){ body->x * (f32)ctx->height, body->y * (f32)ctx->height },
+        body->radius,
+        (Rectangle){ 0, 0, (f32)ctx->width, (f32)ctx->height }
+    );
+    if (!colliding) return;
+
+    f32 x = body->x * (f32)ctx->height;
+    f32 y = body->y * (f32)ctx->height;
+
+    if (x - body->radius < 0) {
+        body->x = body->radius / (f32)ctx->height;
+        body->velocity_x *= -game_collision_dampen;
+    } else if (x + body->radius > (f32)ctx->width) {
+        body->x = ((f32)ctx->width - body->radius) / (f32)ctx->height;
+        body->velocity_x *= -game_collision_dampen;
+    }
+
+    if (y - body->radius < 0) {
+        body->y = body->radius / (f32)ctx->height;
+        body->velocity_y *= -game_collision_dampen;
+    } else if (y + body->radius > (f32)ctx->height) {
+        body->y = ((f32)ctx->height - body->radius) / (f32)ctx->height;
+        body->velocity_y *= -game_collision_dampen;
+    }
 }
 
 static void game_render_creator(Context *ctx) {
@@ -121,6 +165,8 @@ static void game_render_creator(Context *ctx) {
 }
 
 static void game_update_and_render(Context *ctx) {
+    ctx->delta = GetFrameTime();
+
     ctx->mouse_pos = GetMousePosition();
     ctx->cursor_radius += GetMouseWheelMove() * 10.0f;
     clamp(ctx->cursor_radius, game_cursor_radius_min, game_cursor_radius_max);
