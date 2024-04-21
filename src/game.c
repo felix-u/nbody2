@@ -1,6 +1,8 @@
+typedef Vector2 V2;
+
 typedef struct Body {
     f32 mass, radius;
-    Vector2 pos, velocity;
+    V2 pos, velocity;
     Color colour;
 } Body;
 typedef Array(Body) Array_Body;
@@ -8,7 +10,7 @@ typedef Array(Body) Array_Body;
 typedef struct Creator {
     bool active;
     Body body;
-    Vector2 displacement;
+    V2 displacement;
 } Creator;
 
 typedef struct Context {
@@ -19,12 +21,13 @@ typedef struct Context {
     f32 G, delta, cursor_radius;
     Array_Body bodies;
     Creator creator;
-    Vector2 mouse_pos;
+    V2 mouse_pos;
 } Context;
 
-static inline f32 normal_from_screen(Context *ctx, f32 s) { return s / (f32)ctx->height; }
-static inline f32 screen_from_normal(Context *ctx, f32 n) { return n * (f32)ctx->height; }
-static inline f32 normal_width(Context *ctx)              { return (f32)ctx->width / (f32)ctx->height; }
+static inline f32 scale(Context *ctx) { return (f32)ctx->height; }
+static f32 normal_from_screen(Context *ctx, f32 n) { return n / scale(ctx); }
+static f32 screen_from_normal(Context *ctx, f32 n) { return n * scale(ctx); }
+static f32 normal_width(Context *ctx) { return (f32)ctx->width / scale(ctx); }
 
 static void game_init(Context *ctx) {
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
@@ -55,26 +58,31 @@ static void game_compute_interaction(Context *ctx, usize i, usize cmp_i) {
     bool colliding = dist < (body->radius + body_cmp->radius) / 2.0f;
     if (colliding) return;
 
-    f32 force = -1 * ctx->delta * ctx->G * body->mass * body_cmp->mass / (dist * dist);
+    f32 factor = -1 * ctx->delta * ctx->G;
+    f32 force = factor * body->mass * body_cmp->mass / (dist * dist);
     f32 force_x = force * (x_dist / dist);
     f32 force_y = force * (y_dist / dist);
 
-    Vector2 body_accel = { force_x / body->mass, force_y / body->mass };
+    V2 body_accel = { force_x / body->mass, force_y / body->mass };
     body->velocity.x += body_accel.x;
     body->velocity.y += body_accel.y;
 
-    Vector2 body_cmp_accel = { force_x / body_cmp->mass, force_y / body_cmp->mass };
+    V2 body_cmp_accel = { force_x / body_cmp->mass, force_y / body_cmp->mass };
     body_cmp->velocity.x -= body_cmp_accel.x;
     body_cmp->velocity.y -= body_cmp_accel.y;
 }
 
-static Vector2 V2_scale(Vector2 v, f32 s)       { return (Vector2){ v.x * s, v.y * s }; }
-static Vector2 V2_add(Vector2 v1, Vector2 v2)   { return (Vector2){ v1.x + v2.x, v1.y + v2.y }; }
-static Vector2 V2_sub(Vector2 v1, Vector2 v2)   { return (Vector2){ v1.x - v2.x, v1.y - v2.y }; }
-static Vector2 V2_divide(Vector2 v, f32 divide) { return (Vector2){ v.x / divide, v.y / divide }; }
+static V2 V2_scale(V2 v, f32 n)  { return (V2){ v.x * n, v.y * n }; }
+static V2 V2_divide(V2 v, f32 n) { return (V2){ v.x / n, v.y / n }; }
+static V2 V2_add(V2 v1, V2 v2)   { return (V2){ v1.x + v2.x, v1.y + v2.y }; }
+static V2 V2_sub(V2 v1, V2 v2)   { return (V2){ v1.x - v2.x, v1.y - v2.y }; }
 
-static inline Vector2 V2_normal_from_screen(Context *ctx, Vector2 v) { return V2_divide(v, (f32)ctx->height); }
-static inline Vector2 V2_screen_from_normal(Context *ctx, Vector2 v) { return V2_scale(v, (f32)ctx->height); }
+static inline V2 V2_normal_from_screen(Context *ctx, V2 v) { 
+    return V2_divide(v, scale(ctx)); 
+}
+static inline V2 V2_screen_from_normal(Context *ctx, V2 v) { 
+    return V2_scale(v, scale(ctx)); 
+}
 
 static void game_compute_screen_collision(Context *ctx, usize i) {
     Body *body = &ctx->bodies.ptr[i];
@@ -101,20 +109,23 @@ static void game_render_creator(Context *ctx) {
     Creator creator = ctx->creator;
     Body body = creator.body;
 
-    f32 cursor_radius = screen_from_normal(ctx, ctx->cursor_radius);
-    f32 outer_radius = cursor_radius + screen_from_normal(ctx, creator_ring_thickness);
+    f32 inner = screen_from_normal(ctx, ctx->cursor_radius);
+    f32 outer = inner + screen_from_normal(ctx, creator_ring_thickness);
     if (!creator.active) {
-        Vector2 pos = V2_screen_from_normal(ctx, ctx->mouse_pos);
-        DrawRing(pos, cursor_radius, outer_radius, 0, 360, 0, colour_creator_inactive);
+        V2 pos = V2_screen_from_normal(ctx, ctx->mouse_pos);
+        DrawRing(pos, inner, outer, 0, 360, 0, colour_creator_inactive);
         return;
     }
 
-    Vector2 start = V2_screen_from_normal(ctx, body.pos);
-    Vector2 end = V2_screen_from_normal(ctx, V2_add(body.pos, creator.displacement));
-    f32 line_width = screen_from_normal(ctx, creator_displacement_line_thickness);
+    V2 start = V2_screen_from_normal(ctx, body.pos);
+    V2 end = V2_screen_from_normal(
+        ctx, V2_add(body.pos, creator.displacement)
+    );
+    f32 line_width = screen_from_normal(ctx, creator_line_width);
     DrawLineEx(start, end, line_width, colour_creator_displacement_line);
 
-    DrawCircleV(start, screen_from_normal(ctx, body.radius), colour_creator_active);
+    f32 radius = screen_from_normal(ctx, body.radius);
+    DrawCircleV(start, radius, colour_creator_active);
 }
 
 static void game_update_and_render(Context *ctx) {
@@ -136,8 +147,11 @@ static void game_update_and_render(Context *ctx) {
     if (creator->active) {
         f32 factor = 100.0f;
 
-        if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) creator->displacement = V2_sub(ctx->mouse_pos, creator->body.pos);
-        else if (IsMouseButtonReleased(MOUSE_BUTTON_RIGHT)) creator->active = false;
+        if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
+            creator->displacement = V2_sub(ctx->mouse_pos, creator->body.pos);
+        } else if (IsMouseButtonReleased(MOUSE_BUTTON_RIGHT)) {
+            creator->active = false;
+        }
 
         if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             creator->body.velocity = V2_divide(creator->displacement, factor);
@@ -146,23 +160,26 @@ static void game_update_and_render(Context *ctx) {
     } else {
         if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
             creator->active = true;
-            creator->displacement = (Vector2){0};
+            creator->displacement = (V2){0};
             creator->body.pos = ctx->mouse_pos;
         } else if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
             creator->body.pos = ctx->mouse_pos;
-            creator->body.velocity = (Vector2){0};
+            creator->body.velocity = (V2){0};
             array_push(&ctx->arena, bodies, &creator->body);
         }
     }
 
     for (usize i = 0; i < bodies->len; i += 1) {
-        for (usize cmp_i = i + 1; cmp_i < bodies->len; cmp_i += 1) game_compute_interaction(ctx, i, cmp_i);
+        for (usize cmp_i = i + 1; cmp_i < bodies->len; cmp_i += 1) {
+            game_compute_interaction(ctx, i, cmp_i);
+        }
         game_compute_screen_collision(ctx, i);
 
         Body *body = &bodies->ptr[i];
         body->pos = V2_add(body->pos, body->velocity);
 
-        DrawCircleV(V2_screen_from_normal(ctx, body->pos), screen_from_normal(ctx, body->radius), body->colour);
+        V2 pos = V2_screen_from_normal(ctx, body->pos);
+        DrawCircleV(pos, screen_from_normal(ctx, body->radius), body->colour);
     }
 
     game_render_creator(ctx);

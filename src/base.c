@@ -310,11 +310,11 @@ static void file_write(FILE *file, Str8 memory) {
     fwrite(memory.ptr, memory.len, 1, file);
 }
 
-#define min(a, b) ((a) < (b)) ? (b) : (a)
-#define max(a, b) ((a) > (b)) ? (b) : (a)
-#define clamp(x, _min, _max) {\
-    x = min((_min), (x));\
-    x = max((_max), (x));\
+#define min_(a, b) ((a) < (b)) ? (b) : (a)
+#define max_(a, b) ((a) > (b)) ? (b) : (a)
+#define clamp(x, min_val, max_val) {\
+    x = min_((min_val), (x));\
+    x = max_((max_val), (x));\
 }
 
 #endif // BASE
