@@ -3,6 +3,7 @@
 #include "raylib.h"
 #include "math.h"
 
+#include "config.c"
 #include "game.c"
 
 int main(void) {
