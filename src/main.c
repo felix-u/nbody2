@@ -11,7 +11,7 @@ int main(void) {
         .name = "nbody2",
         .width = 2560,
         .height = 1440,
-        .fps = 360,
+        .fps = 60,
     };
     game_init(&ctx);
 
