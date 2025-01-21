@@ -3,5 +3,5 @@ release/
 *.o
 *.out
 *.pdb
-zig-cache/
+*zig-cache/
 zig-out/
